@@ -48,7 +48,7 @@ swagger_template = {
                        "**Fórmula de costo:** w = (d / v) × (1 / f) + s\n\n"
                        "**Curso:** 1ACC0184 - Complejidad Algorítmica (UPC) — 2026-1",
         "version": "1.0.0",
-        "contact": {"name": "Steve Vivar", "email": "u202414424@upc.edu.pe"},
+        "contact": {"name": "David Vivar", "email": "u202414424@upc.edu.pe"},
     },
     "tags": [
         {"name": "Grafo", "description": "Generación y consulta del grafo vial"},
