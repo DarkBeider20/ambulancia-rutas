@@ -19,6 +19,7 @@ matplotlib.use('Agg')
 import osmnx as ox
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from flasgger import Swagger
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BACKEND_DIR)
@@ -26,6 +27,37 @@ FRONTEND_DIR = os.path.join(PROJECT_DIR, 'frontend', 'dist', 'ambulancia-rutas',
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path='')
 CORS(app)
+
+swagger_config = {
+    "headers": [],
+    "specs": [{
+        "endpoint": "apispec",
+        "route": "/apispec.json",
+        "rule_filter": lambda rule: rule.rule.startswith("/api"),
+        "model_filter": lambda tag: True,
+    }],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/docs"
+}
+
+swagger_template = {
+    "info": {
+        "title": "API de Rutas de Ambulancias — Lima Metropolitana",
+        "description": "API REST para optimización de rutas de ambulancias usando algoritmos de grafos (Dijkstra, A*, Bellman-Ford) sobre datos reales de OpenStreetMap.\n\n"
+                       "**Fórmula de costo:** w = (d / v) × (1 / f) + s\n\n"
+                       "**Curso:** 1ACC0184 - Complejidad Algorítmica (UPC) — 2026-1",
+        "version": "1.0.0",
+        "contact": {"name": "Steve Vivar", "email": "u202414424@upc.edu.pe"},
+    },
+    "tags": [
+        {"name": "Grafo", "description": "Generación y consulta del grafo vial"},
+        {"name": "Rutas", "description": "Cálculo de rutas óptimas con algoritmos de grafos"},
+        {"name": "Sistema", "description": "Estado y salud de la API"},
+    ],
+}
+
+swagger = Swagger(app, config=swagger_config, template=swagger_template)
 
 STATIC_DIR = os.path.join(BACKEND_DIR, 'static')
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -285,6 +317,25 @@ def generar_dataset_y_grafo(lugar):
 
 @app.route('/api/health')
 def health():
+    """Estado de la API
+    ---
+    tags:
+      - Sistema
+    responses:
+      200:
+        description: API funcionando correctamente
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "API de Optimización de Rutas de Ambulancias — Lima Metropolitana"
+            algoritmos:
+              type: array
+              items:
+                type: string
+              example: ["dijkstra", "a_estrella", "bellman_ford"]
+    """
     return jsonify({
         "message": "API de Optimización de Rutas de Ambulancias — Lima Metropolitana",
         "algoritmos": ["dijkstra", "a_estrella", "bellman_ford"],
@@ -301,6 +352,68 @@ def home():
 
 @app.route('/api/generar_grafo', methods=['POST'])
 def generar_grafo_endpoint():
+    """Generar grafo vial desde OpenStreetMap
+    ---
+    tags:
+      - Grafo
+    description: |
+      Descarga la red vial de un distrito de Lima desde OpenStreetMap usando OSMnx,
+      construye un grafo dirigido ponderado, genera una imagen de visualización y
+      exporta el dataset en CSV.
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            lugar:
+              type: string
+              description: Nombre del distrito (formato OpenStreetMap)
+              example: "Lince, Lima, Peru"
+              default: "Lince, Lima, Peru"
+    responses:
+      200:
+        description: Grafo generado exitosamente
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            message:
+              type: string
+              example: "Grafo procesado: Lince, Lima, Peru"
+            data:
+              type: object
+              properties:
+                nodos:
+                  type: integer
+                  example: 1243
+                aristas:
+                  type: integer
+                  example: 3102
+                total_registros_csv:
+                  type: integer
+                  example: 3102
+                url_imagen:
+                  type: string
+                  example: "/static/grafo_visualizacion.png"
+                url_csv:
+                  type: string
+                  example: "/static/dataset_vial.csv"
+      500:
+        description: Error al descargar o procesar el grafo
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: error
+            message:
+              type: string
+              example: "No se encontró el lugar especificado"
+    """
     data = request.get_json() or {}
     lugar = data.get('lugar', 'Lince, Lima, Peru')
     try:
@@ -312,6 +425,45 @@ def generar_grafo_endpoint():
 
 @app.route('/api/nodos', methods=['GET'])
 def listar_nodos():
+    """Listar todos los nodos del grafo
+    ---
+    tags:
+      - Grafo
+    description: |
+      Retorna todos los nodos del grafo cargado con sus coordenadas y nombre de calle.
+      Requiere haber generado un grafo previamente con `/api/generar_grafo`.
+    responses:
+      200:
+        description: Lista de nodos
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            total:
+              type: integer
+              example: 1243
+            nodos:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 267834521
+                  lat:
+                    type: number
+                    example: -12.083456
+                  lng:
+                    type: number
+                    example: -77.034521
+                  nombre:
+                    type: string
+                    example: "Av. Arequipa / Calle Roma"
+      400:
+        description: No hay grafo cargado
+    """
     if _cache["G"] is None:
         return jsonify({"status": "error", "message": "No hay grafo cargado."}), 400
     G = _cache["G"]
@@ -329,7 +481,40 @@ def listar_nodos():
 
 @app.route('/api/aristas', methods=['GET'])
 def listar_aristas():
-    """Devuelve todas las aristas con coords para dibujar el grafo en el mapa."""
+    """Listar todas las aristas del grafo
+    ---
+    tags:
+      - Grafo
+    description: |
+      Retorna todas las aristas del grafo con coordenadas de origen y destino
+      para dibujar la red vial en el mapa. Requiere grafo cargado.
+    responses:
+      200:
+        description: Lista de aristas con coordenadas
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            aristas:
+              type: array
+              items:
+                type: object
+                properties:
+                  from:
+                    type: array
+                    items:
+                      type: number
+                    example: [-12.083456, -77.034521]
+                  to:
+                    type: array
+                    items:
+                      type: number
+                    example: [-12.084123, -77.035012]
+      400:
+        description: No hay grafo cargado
+    """
     if _cache["G"] is None:
         return jsonify({"status": "error", "message": "No hay grafo cargado."}), 400
     G = _cache["G"]
@@ -345,6 +530,139 @@ def listar_aristas():
 
 @app.route('/api/ruta_optima', methods=['POST'])
 def ruta_optima_endpoint():
+    """Calcular ruta óptima con los 3 algoritmos
+    ---
+    tags:
+      - Rutas
+    description: |
+      Ejecuta Dijkstra, A* y Bellman-Ford sobre el grafo cargado para encontrar
+      la ruta óptima entre origen y destino. Compara los tres algoritmos y
+      devuelve el mejor resultado junto con las coordenadas para visualización.
+
+      **Fórmula de peso:** `w = (d / v) × (1 / f) + s`
+
+      - Dijkstra y A* usan pesos normales (≥ 0)
+      - Bellman-Ford aplica bonus de **−15s** en vías con tráfico fluido (ola verde)
+
+      Se usa `random.seed(42)` antes de cada algoritmo para que los tres
+      trabajen sobre el mismo grafo ponderado.
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - origen
+            - destino
+          properties:
+            origen:
+              description: ID del nodo origen (entero) o coordenadas {lat, lng}
+              example: 267834521
+            destino:
+              description: ID del nodo destino (entero) o coordenadas {lat, lng}
+              example: 267834530
+            algoritmo:
+              type: string
+              description: Algoritmo preferido (los 3 se ejecutan siempre para comparar)
+              enum: [dijkstra, a_estrella, bellman_ford]
+              default: dijkstra
+    responses:
+      200:
+        description: Comparación de los 3 algoritmos con rutas calculadas
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: success
+            algoritmo_seleccionado:
+              type: string
+              example: dijkstra
+            mejor_algoritmo:
+              type: string
+              description: Algoritmo que encontró la ruta de menor costo
+              example: bellman_ford
+            origen:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 267834521
+                lat:
+                  type: number
+                  example: -12.083456
+                lng:
+                  type: number
+                  example: -77.034521
+                nombre:
+                  type: string
+                  example: "Av. Arequipa / Calle Roma"
+            destino:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 267834530
+                lat:
+                  type: number
+                  example: -12.090123
+                lng:
+                  type: number
+                  example: -77.040567
+                nombre:
+                  type: string
+                  example: "Av. Arenales / Calle Risso"
+            resultados:
+              type: object
+              description: Resultados por cada algoritmo
+              properties:
+                dijkstra:
+                  type: object
+                  properties:
+                    algoritmo:
+                      type: string
+                      example: Dijkstra
+                    costo_total_segundos:
+                      type: number
+                      example: 245.67
+                    costo_total_minutos:
+                      type: number
+                      example: 4.09
+                    nodos_camino:
+                      type: integer
+                      example: 18
+                    nodos_visitados:
+                      type: integer
+                      example: 850
+                    tiempo_ejecucion_ms:
+                      type: number
+                      example: 12.34
+                    ciclo_negativo:
+                      type: boolean
+                      example: null
+                    coordenadas_ruta:
+                      type: array
+                      items:
+                        type: array
+                        items:
+                          type: number
+                      example: [[-12.083, -77.034], [-12.084, -77.035]]
+            complejidades:
+              type: object
+              properties:
+                dijkstra:
+                  type: string
+                  example: "O((V+E) log V)"
+                a_estrella:
+                  type: string
+                  example: "O((V+E) log V)"
+                bellman_ford:
+                  type: string
+                  example: "O(V·E)"
+      400:
+        description: No hay grafo cargado o nodo no encontrado
+    """
     if _cache["G"] is None:
         return jsonify({"status": "error", "message": "No hay grafo cargado."}), 400
 
