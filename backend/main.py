@@ -20,12 +20,14 @@ import osmnx as ox
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-FRONTEND_DIR = os.path.join(os.path.dirname(app.root_path), 'frontend', 'dist', 'ambulancia-rutas', 'browser')
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(BACKEND_DIR)
+FRONTEND_DIR = os.path.join(PROJECT_DIR, 'frontend', 'dist', 'ambulancia-rutas', 'browser')
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path='')
 CORS(app)
 
-STATIC_DIR = os.path.join(app.root_path, 'static')
+STATIC_DIR = os.path.join(BACKEND_DIR, 'static')
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 _cache = {"lugar": None, "G": None, "nodos_info": None}
