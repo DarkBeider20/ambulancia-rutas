@@ -48,7 +48,7 @@ swagger_template = {
                        "**Fórmula de costo:** w = (d / v) × (1 / f) + s\n\n"
                        "**Curso:** 1ACC0184 - Complejidad Algorítmica (UPC) — 2026-1",
         "version": "1.0.0",
-        "contact": {"name": "David Vivar", "email": "u202414424@upc.edu.pe"},
+        "contact": {"name": "Steve Vivar", "email": "u202414424@upc.edu.pe"},
     },
     "tags": [
         {"name": "Grafo", "description": "Generación y consulta del grafo vial"},
@@ -89,7 +89,7 @@ def calcular_peso(distancia_m, vel_max_kmh, factor_trafico, tiene_semaforo, modo
     s = PENALIDAD_SEMAFORO if tiene_semaforo else 0
     peso = tiempo_base + s
     if modo == "bellman" and factor_trafico > UMBRAL_TRAFICO_FLUIDO:
-        peso += BONUS_OLA_VERDE
+        peso = max(peso + BONUS_OLA_VERDE, 0.01)
     return round(peso, 2)
 
 
