@@ -1,0 +1,218 @@
+<header class="header">
+  <div class="header-inner">
+    <span class="header-icon">🚑</span>
+    <div>
+      <h1 class="header-title">Optimizador de Rutas de Ambulancias</h1>
+      <p class="header-subtitle">Lima Metropolitana — Complejidad Algorítmica (UPC)</p>
+    </div>
+  </div>
+</header>
+
+<main class="main-content">
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- PASO 1: Generar Grafo                                   -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section *ngIf="paso === 1" class="panel">
+    <h2 class="panel-title">Descargar red vial desde OpenStreetMap</h2>
+    <p class="panel-desc">Ingresa un distrito de Lima para descargar su mapa vial como grafo dirigido.</p>
+
+    <div class="input-row">
+      <input type="text" [(ngModel)]="lugarInput" class="input" placeholder="Ej: Lince, Lima, Peru" [disabled]="loadingGrafo" />
+      <button (click)="procesarMapa()" [disabled]="loadingGrafo" class="btn btn-primary">
+        {{ loadingGrafo ? '⏳ Descargando...' : '📥 Generar Grafo' }}
+      </button>
+    </div>
+
+    <div *ngIf="loadingGrafo" class="alert alert-info">⏳ Descargando de OpenStreetMap... puede tomar 10–30 segundos.</div>
+    <div *ngIf="grafoError" class="alert alert-error">❌ {{ grafoError }}</div>
+
+    <div *ngIf="grafoData" class="results-section">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-value">{{ grafoData.nodos }}</span>
+          <span class="stat-label">Intersecciones</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{{ grafoData.aristas }}</span>
+          <span class="stat-label">Calles</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-value">{{ grafoData.total_registros_csv }}</span>
+          <span class="stat-label">Registros CSV</span>
+        </div>
+      </div>
+      <div class="actions-row">
+        <a [href]="grafoData.url_csv" target="_blank" class="btn btn-success">📥 Descargar CSV</a>
+        <button (click)="irAPaso(2)" class="btn btn-primary">Siguiente: Seleccionar Ruta →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- PASO 2: Seleccionar ruta en mapa                        -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section *ngIf="paso === 2" class="panel">
+    <h2 class="panel-title">Selecciona origen y destino en el mapa</h2>
+
+    <div class="map-toolbar">
+      <div class="select-indicator" [class.select-origen]="seleccionandoTipo === 'origen'" [class.select-destino]="seleccionandoTipo === 'destino'">
+        Seleccionando:
+        <strong>{{ seleccionandoTipo === 'origen' ? '🟢 ORIGEN (ambulancia)' : '🔴 DESTINO (hospital)' }}</strong>
+      </div>
+      <button (click)="resetSeleccion()" class="btn btn-secondary btn-sm">↺ Reiniciar</button>
+    </div>
+
+    <div class="selected-nodes" *ngIf="origenNodo || destinoNodo">
+      <div class="selected-node" *ngIf="origenNodo">
+        <span class="dot dot-green"></span>
+        <div><strong>Origen:</strong> {{ origenNodo.nombre || ('Nodo ' + origenNodo.id) }}</div>
+      </div>
+      <div class="selected-node" *ngIf="destinoNodo">
+        <span class="dot dot-red"></span>
+        <div><strong>Destino:</strong> {{ destinoNodo.nombre || ('Nodo ' + destinoNodo.id) }}</div>
+      </div>
+    </div>
+
+    <div id="mapa-leaflet" class="mapa-container"></div>
+
+    <div *ngIf="origenNodo && destinoNodo" class="bottom-bar">
+      <div class="algo-selector-inline">
+        <label class="label">Algoritmo:</label>
+        <select [(ngModel)]="algoritmoSeleccionado" class="input select-algo">
+          <option value="dijkstra">Dijkstra — O((V+E) log V)</option>
+          <option value="a_estrella">A* — heurística haversine</option>
+          <option value="bellman_ford">Bellman-Ford — pesos negativos (ola verde)</option>
+        </select>
+      </div>
+      <button (click)="calcularRuta()" [disabled]="loadingRuta" class="btn btn-primary btn-large">
+        {{ loadingRuta ? '⏳ Calculando...' : '🚑 Calcular Ruta Óptima' }}
+      </button>
+    </div>
+
+    <div *ngIf="loadingRuta" class="alert alert-info">⏳ Calculando ruta óptima...</div>
+    <div *ngIf="rutaError" class="alert alert-error">❌ {{ rutaError }}</div>
+  </section>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- PASO 3: RESULTADO — Mapa con ruta como protagonista     -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <section *ngIf="paso === 3 && rutaData" class="panel">
+
+    <!-- Resumen principal -->
+    <div class="resultado-hero">
+      <div class="resultado-header">
+        <h2 class="resultado-titulo">Ruta óptima calculada</h2>
+        <span class="resultado-algo-badge" [style.background]="getColorAlgoritmo(rutaData.mejor_algoritmo)">
+          {{ getMejorResultado()?.algoritmo }}
+        </span>
+      </div>
+
+      <div class="resultado-ruta-info">
+        <div class="ruta-punto">
+          <span class="dot dot-green"></span>
+          <div>
+            <span class="ruta-label">Origen</span>
+            <span class="ruta-nombre">{{ rutaData.origen.nombre || ('Nodo ' + rutaData.origen.id) }}</span>
+          </div>
+        </div>
+        <div class="ruta-flecha">→</div>
+        <div class="ruta-punto">
+          <span class="dot dot-red"></span>
+          <div>
+            <span class="ruta-label">Destino</span>
+            <span class="ruta-nombre">{{ rutaData.destino.nombre || ('Nodo ' + rutaData.destino.id) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="resultado-metricas">
+        <div class="metrica-principal">
+          <span class="metrica-valor">{{ getMejorResultado()?.costo_total_minutos }}</span>
+          <span class="metrica-unidad">minutos</span>
+          <span class="metrica-detalle">tiempo estimado</span>
+        </div>
+        <div class="metrica-secundaria">
+          <div class="metrica-item">
+            <span class="metrica-num">{{ getMejorResultado()?.nodos_camino }}</span>
+            <span class="metrica-label">intersecciones</span>
+          </div>
+          <div class="metrica-item">
+            <span class="metrica-num">{{ getMejorResultado()?.tiempo_ejecucion_ms }} ms</span>
+            <span class="metrica-label">tiempo cálculo</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAPA CON LA RUTA — elemento principal -->
+    <div id="mapa-resultado" class="mapa-container mapa-resultado"></div>
+
+    <!-- Leyenda -->
+    <div class="route-legend">
+      <span class="legend-item"><span class="dot dot-green"></span> Ambulancia (origen)</span>
+      <span class="legend-item"><span class="dot dot-red"></span> Hospital (destino)</span>
+      <span class="legend-item"><span class="legend-line" [style.background]="getColorAlgoritmo(rutaData.mejor_algoritmo)"></span> Ruta óptima</span>
+      <span class="legend-item" *ngIf="getMejorResultado()?.tiene_ola_verde">
+        <span class="legend-line" style="background:#22c55e"></span> Tramos con ola verde
+      </span>
+    </div>
+
+    <!-- Nota sobre Bellman-Ford si aplica -->
+    <div class="ola-verde-note" *ngIf="rutaData.mejor_algoritmo === 'bellman_ford'">
+      ⚡ La ruta aprovecha la <strong>ola verde</strong>: en tramos con tráfico fluido (factor &gt; 0.85)
+      se aplica priorización semafórica V2I, reduciendo −15s por tramo. Este efecto
+      solo es capturable con Bellman-Ford (pesos negativos).
+    </div>
+
+    <!-- Comparativa colapsable -->
+    <details class="comparativa-details">
+      <summary class="comparativa-summary">📊 Ver comparativa de algoritmos</summary>
+      <div class="comparativa-content">
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th>Algoritmo</th>
+              <th>Tiempo estimado</th>
+              <th>Nodos ruta</th>
+              <th>Nodos visitados</th>
+              <th>Ejecución</th>
+              <th>Complejidad</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let r of getResultadosArray()" [class.row-best]="r.esMejor">
+              <td>
+                <span class="algo-tag">{{ r.algoritmo }}</span>
+                <span *ngIf="r.esMejor" class="badge badge-best">🏆 Mejor</span>
+              </td>
+              <td>
+                <span class="value-primary">{{ r.costo_total_minutos }} min</span>
+                <span class="value-secondary">({{ r.costo_total_segundos }}s)</span>
+              </td>
+              <td>{{ r.nodos_camino }}</td>
+              <td>{{ r.nodos_visitados }}</td>
+              <td>{{ r.tiempo_ejecucion_ms }} ms</td>
+              <td class="complexity">{{ rutaData.complejidades[r.key] }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="formula-box">
+          <span class="formula">w = (d / v) × (1 / f) + s</span>
+          <span class="formula-vars">d=distancia · v=velocidad · f=tráfico · s=semáforo(30s)</span>
+        </div>
+      </div>
+    </details>
+
+    <div class="actions-row">
+      <button (click)="volverAlMapa()" class="btn btn-primary">← Calcular otra ruta</button>
+      <button (click)="irAPaso(1)" class="btn btn-secondary">← Cambiar distrito</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p>1ACC0184 — Complejidad Algorítmica · UPC · 2026-10</p>
+</footer>
